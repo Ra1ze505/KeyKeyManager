@@ -26,6 +26,7 @@ class LoginPassword(StatesGroup):
     login = State()
     password = State()
     end = State()
+    change = State()
 
 
 @dp.message_handler(commands=('start',))
@@ -46,6 +47,7 @@ async def process_help_command(message: types.Message):
 
 @dp.message_handler(text='Создать пароль')
 async def set_new_password(message: types.Message):
+    """Создание нового ключа"""
     await LoginPassword.title.set()
     await bot.send_message(message.from_user.id, 'Введите наименование')
 
@@ -54,6 +56,10 @@ async def set_new_password(message: types.Message):
 async def process_title(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['title'] = message.text
+    # await message.delete()
+    print(message.chat.id, message.from_user.id, message.message_id)
+    await bot.delete_message(message.chat.id, message.message_id)
+    await bot.delete_message(message.chat.id, message.message_id - 1)
     await LoginPassword.next()
     await bot.send_message(message.from_user.id, 'Введите логин')
 
@@ -62,14 +68,20 @@ async def process_title(message: types.Message, state: FSMContext):
 async def process_login(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         data['login'] = message.text
+    await bot.delete_message(message.chat.id, message.message_id)
+    await bot.delete_message(message.chat.id, message.message_id - 1)
     await LoginPassword.next()
     await bot.send_message(message.from_user.id, 'Введите пароль')
 
 
 @dp.message_handler(state=LoginPassword.password)
-async def process_password(message: types.Message, state: FSMContext):
+async def process_password(message: types.Message, state: FSMContext, set_password=True):
+    """Прием пароля и отображение state.data"""
     async with state.proxy() as data:
-        data['password'] = message.text
+        if set_password:
+            data['password'] = message.text
+        await bot.delete_message(message.chat.id, message.message_id)
+        await bot.delete_message(message.chat.id, message.message_id - 1)
         reply = f'Наименование: {data["title"]}\nЛогин: {data["login"]}\nПароль: {data["password"]}'
         await bot.send_message(message.from_user.id, reply, reply_markup=kb.pre_save_kb)
     await LoginPassword.next()
@@ -77,7 +89,7 @@ async def process_password(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler(state=LoginPassword.end)
 async def process_end(call: CallbackQuery, state: FSMContext):
-    print(call.data)
+    """Подтверждение/изменение нового пароля"""
     if call.data == 'save':
         async with state.proxy() as data:
             key = UserKey(user_id=call.from_user.id, title=data['title'], login=data['login'], password=data['password'])
@@ -86,15 +98,37 @@ async def process_end(call: CallbackQuery, state: FSMContext):
         await state.finish()
         await bot.send_message(call.from_user.id, 'Успешно сохранено')
     elif call.data == 'change':
-        await LoginPassword.first()
-        await bot.send_message(call.from_user.id, 'Введите наименование')
+        await LoginPassword.next()
+        await bot.send_message(call.from_user.id, 'Что вы хотите изменить?', reply_markup=kb.pre_save_change_kb)
     elif call.data == 'cancel':
         await state.finish()
         await bot.send_message(call.from_user.id, 'Отменено')
+    print(call.message.message_id)
+    await bot.delete_message(call.from_user.id, call.message.message_id)
+
+
+@dp.callback_query_handler(text_contains="change", state=LoginPassword.change)
+async def edit_pre_save(call: CallbackQuery, state: FSMContext):
+    """Редактирование перед сохранением"""
+    ch = call.data.split('_')[1]
+    async with state.proxy() as data:
+        data[ch] = None
+    await bot.delete_message(call.from_user.id, call.message.message_id)
+    await bot.send_message(call.from_user.id, 'Введите новое значение')
+
+
+@dp.message_handler(state=LoginPassword.change)
+async def new_value_pre_save(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        for key in data:
+            data[key] = message.text if not data[key] else data[key]
+    await LoginPassword.password.set()
+    await process_password(message, state, set_password=False)
 
 
 @dp.message_handler(text='Мои пароли')
 async def view_keys(message: types.Message):
+    """Просмотр списка паролей"""
     keys = current_session.query(User).filter(User.chat_id == message.from_user.id).one().key
     markup = InlineKeyboardMarkup(row_width=1)
     for key in keys:
@@ -105,6 +139,7 @@ async def view_keys(message: types.Message):
 
 @dp.callback_query_handler(text_contains="key")
 async def view_key(call: CallbackQuery):
+    """Отображение ключа"""
     key_title = call.data.split('=')[1]
     print(f'key_title={key_title}')
     key = current_session.query(UserKey).filter((UserKey.user_id == call.from_user.id) & (UserKey.title == key_title)).one()
