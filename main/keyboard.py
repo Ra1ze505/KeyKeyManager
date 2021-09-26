@@ -21,3 +21,8 @@ pre_save_change_kb = InlineKeyboardMarkup(row_width=1)
 pre_save_change_kb.insert(btnChangeTitle)
 pre_save_change_kb.insert(btnChangeLogin)
 pre_save_change_kb.insert(btnChangePassword)
+
+btnCopy = InlineKeyboardButton(text='Скопировал', callback_data='copy')
+view_keys_kb = InlineKeyboardMarkup(row_width=1)
+view_keys_kb.insert(btnCopy)
+

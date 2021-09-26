@@ -7,6 +7,7 @@ from aiogram.types import CallbackQuery
 from aiogram.utils import executor
 from sqlalchemy.exc import IntegrityError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from sqlalchemy.sql.elements import and_
 
 from main.models import *
 
@@ -27,6 +28,11 @@ class LoginPassword(StatesGroup):
     password = State()
     end = State()
     change = State()
+
+
+class ChangeKey(StatesGroup):
+    start = State()
+    stop = State()
 
 
 @dp.message_handler(commands=('start',))
@@ -55,9 +61,13 @@ async def set_new_password(message: types.Message):
 @dp.message_handler(state=LoginPassword.title)
 async def process_title(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        data['title'] = message.text
-    # await message.delete()
-    print(message.chat.id, message.from_user.id, message.message_id)
+        k = current_session.query(UserKey).filter(and_(UserKey.user_id == message.from_user.id, UserKey.title == message.text))
+        exist = current_session.query(k.exists()).scalar()
+        if not exist:
+            data['title'] = message.text
+        else:
+            await bot.send_message(message.chat.id, 'Такое наименование уже есть')
+            return await set_new_password(message)
     await bot.delete_message(message.chat.id, message.message_id)
     await bot.delete_message(message.chat.id, message.message_id - 1)
     await LoginPassword.next()
@@ -91,19 +101,26 @@ async def process_password(message: types.Message, state: FSMContext, set_passwo
 async def process_end(call: CallbackQuery, state: FSMContext):
     """Подтверждение/изменение нового пароля"""
     if call.data == 'save':
+        success = True
         async with state.proxy() as data:
             key = UserKey(user_id=call.from_user.id, title=data['title'], login=data['login'], password=data['password'])
         current_session.add(key)
-        current_session.commit()
+        try:
+            current_session.commit()
+        except IntegrityError:
+            success = False
+            current_session.rollback()
         await state.finish()
-        await bot.send_message(call.from_user.id, 'Успешно сохранено')
+        if success:
+            await bot.send_message(call.from_user.id, 'Успешно сохранено')
+        else:
+            await bot.send_message(call.from_user.id, 'Произошла ошибка, попробуйте снова')
     elif call.data == 'change':
         await LoginPassword.next()
         await bot.send_message(call.from_user.id, 'Что вы хотите изменить?', reply_markup=kb.pre_save_change_kb)
     elif call.data == 'cancel':
         await state.finish()
         await bot.send_message(call.from_user.id, 'Отменено')
-    print(call.message.message_id)
     await bot.delete_message(call.from_user.id, call.message.message_id)
 
 
@@ -134,16 +151,87 @@ async def view_keys(message: types.Message):
     for key in keys:
         bt = InlineKeyboardButton(text='{}: {}'.format(key.title, key.login), callback_data='key={}'.format(key.title))
         markup.insert(bt)
+    await bot.delete_message(message.from_user.id, message.message_id)
     await bot.send_message(message.from_user.id, 'Сохраненные пароли', reply_markup=markup)
 
 
-@dp.callback_query_handler(text_contains="key")
+@dp.callback_query_handler(text_contains="key=")
 async def view_key(call: CallbackQuery):
     """Отображение ключа"""
     key_title = call.data.split('=')[1]
-    print(f'key_title={key_title}')
     key = current_session.query(UserKey).filter((UserKey.user_id == call.from_user.id) & (UserKey.title == key_title)).one()
-    await bot.send_message(call.from_user.id, 'login: {}\npassword: {}'.format(key.login, key.password))
+    btn = InlineKeyboardMarkup(row_width=1)
+    btnCopy = InlineKeyboardButton(text='Скопировал', callback_data='copy')
+    btnDelete = InlineKeyboardButton(text='Удалить', callback_data='delete_key_{}'.format(key.id))
+    btnChange = InlineKeyboardButton(text='Изменить', callback_data='change_key_{}'.format(key.id))
+    btn.insert(btnCopy)
+    btn.insert(btnChange)
+    btn.insert(btnDelete)
+    await bot.delete_message(call.from_user.id, call.message.message_id)
+    await bot.send_message(call.from_user.id, 'login: {}\npassword: {}'.format(key.login, key.password), reply_markup=btn)
+
+
+@dp.callback_query_handler(text="copy")
+async def copy_key(call: CallbackQuery):
+    """Удаление сообщения с паролем после копирования"""
+    await bot.delete_message(call.from_user.id, call.message.message_id)
+
+
+@dp.callback_query_handler(text_contains="delete_key")
+async def delete_key(call: CallbackQuery):
+    """Удаление ключа"""
+    key_id = call.data.split('_')[2]
+    current_session.query(UserKey).filter_by(id=key_id).delete()
+    current_session.commit()
+    await bot.delete_message(call.from_user.id, call.message.message_id)
+    await bot.send_message(call.from_user.id, 'Удалено')
+
+
+@dp.callback_query_handler(text_contains="change_key")
+async def delete_key(call: CallbackQuery):
+    """Начало процедуры изменения ключа"""
+    key_id = call.data.split('_')[2]
+    btn = InlineKeyboardMarkup(row_width=1)
+    btnChangeTitle = InlineKeyboardButton(text='Наименование', callback_data='change_title_{}'.format(key_id))
+    btnChangeLogin = InlineKeyboardButton(text='Логин', callback_data='change_login_{}'.format(key_id))
+    btnChangeKey = InlineKeyboardButton(text='Пароль', callback_data='change_password_{}'.format(key_id))
+    btn.insert(btnChangeTitle)
+    btn.insert(btnChangeLogin)
+    btn.insert(btnChangeKey)
+    await ChangeKey.start.set()
+    await bot.delete_message(call.from_user.id, call.message.message_id)
+    await bot.send_message(call.from_user.id, 'Что вы хотите изменить?', reply_markup=btn)
+
+
+@dp.callback_query_handler(text_contains="change_", state=ChangeKey.start)
+async def delete_key(call: CallbackQuery, state: FSMContext):
+    value, key_id = call.data.split('_')[1:]
+    async with state.proxy() as data:
+        data['value'] = value
+        data['id'] = int(key_id)
+    await ChangeKey.next()
+    await bot.delete_message(call.from_user.id, call.message.message_id)
+    await bot.send_message(call.from_user.id, 'Введите новое значение')
+
+
+@dp.message_handler(state=ChangeKey.stop)
+async def delete_key(message: types.Message, state: FSMContext):
+    success = True
+    async with state.proxy() as data:
+        key = current_session.query(UserKey).filter_by(id=data['id']).update({data['value']: message.text})
+        try:
+            current_session.commit()
+        except IntegrityError:
+            success = False
+            current_session.rollback()
+    await state.finish()
+    await bot.delete_message(message.from_user.id, message.message_id)
+    await bot.delete_message(message.from_user.id, message.message_id - 1)
+    if success:
+        await bot.send_message(message.from_user.id, 'Успешно изменено')
+    else:
+        await bot.send_message(message.from_user.id, 'Произошла ошибка, попробуйте снова')
+
 
 if __name__ == '__main__':
     executor.start_polling(dp)

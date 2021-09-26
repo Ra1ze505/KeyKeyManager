@@ -23,7 +23,7 @@ class UserKey(Base):
     user_id = Column(Integer, ForeignKey('user.chat_id'))
     user = relationship("User", back_populates="key")
 
-    title = Column(String(255))
+    title = Column(String(255), unique=True)
     login = Column(String(255))
     password = Column(String(255))
 
