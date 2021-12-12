@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy.sql.elements import and_
 
-from main.models import *
+from models import *
 
 import keyboard as kb
 from settings import TOKEN

@@ -4,7 +4,7 @@ services:
   bot:
     restart: always
     build:
-      context: main
+      context: .
     volumes:
       - /main:/main
     depends_on:
@@ -15,8 +15,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
+      POSTGRES_USER: postgres
       POSTGRES_DB: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - 5432:5432
 
 volumes:
   postgres_data:

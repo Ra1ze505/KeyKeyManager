@@ -7,7 +7,7 @@ from sqlalchemy.ext.declarative import declarative_base
 
 
 Base = declarative_base()
-engine = create_engine('postgresql://postgres:password@localhost/postgres', echo=True)
+engine = create_engine('postgresql://postgres:postgres@db:5432/postgres', echo=True)
 
 
 class User(Base):
