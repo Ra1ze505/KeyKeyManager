@@ -23,6 +23,7 @@ dp = Dispatcher(bot, storage=storage)
 
 
 class LoginPassword(StatesGroup):
+    """Стадии создания нового логина + пароля"""
     title = State()
     login = State()
     password = State()
@@ -37,6 +38,7 @@ class ChangeKey(StatesGroup):
 
 @dp.message_handler(commands=('start',))
 async def process_start_command(message: types.Message):
+    """Отслеживание первого сообщения боту"""
     user = User(chat_id=message.from_user.id)
     current_session.add(user)
     try:
@@ -46,22 +48,18 @@ async def process_start_command(message: types.Message):
     await message.reply("Привет!\nНапиши мне что-нибудь!", reply_markup=kb.greet_kb,)
 
 
-@dp.message_handler(commands=('help',))
-async def process_help_command(message: types.Message):
-    await message.reply("Напиши мне что-нибудь, и я отпрпавлю этот текст тебе в ответ!")
-
-
 @dp.message_handler(text='Создать пароль')
 async def set_new_password(message: types.Message):
     """Создание нового ключа"""
-    await LoginPassword.title.set()
+    await LoginPassword.title.set()  # Создаем стадию получения названия
     await bot.send_message(message.from_user.id, 'Введите наименование')
 
 
 @dp.message_handler(state=LoginPassword.title)
 async def process_title(message: types.Message, state: FSMContext):
+    """Получение названия ключа"""
     async with state.proxy() as data:
-        k = current_session.query(UserKey).filter(and_(UserKey.user_id == message.from_user.id, UserKey.title == message.text))
+        k = current_session.query(UserKey).filter(and_(UserKey.user_id == message.from_user.id, UserKey.title == message.text))  # Проверка на существование такого названия у ключа
         exist = current_session.query(k.exists()).scalar()
         if not exist:
             data['title'] = message.text
@@ -70,23 +68,24 @@ async def process_title(message: types.Message, state: FSMContext):
             return await set_new_password(message)
     await bot.delete_message(message.chat.id, message.message_id)
     await bot.delete_message(message.chat.id, message.message_id - 1)
-    await LoginPassword.next()
+    await LoginPassword.next()  # Вызываем следующую стадию (логин)
     await bot.send_message(message.from_user.id, 'Введите логин')
 
 
 @dp.message_handler(state=LoginPassword.login)
 async def process_login(message: types.Message, state: FSMContext):
+    """Получение логина"""
     async with state.proxy() as data:
         data['login'] = message.text
     await bot.delete_message(message.chat.id, message.message_id)
     await bot.delete_message(message.chat.id, message.message_id - 1)
-    await LoginPassword.next()
+    await LoginPassword.next()  # Вызываем следующую стадию (пароль)
     await bot.send_message(message.from_user.id, 'Введите пароль')
 
 
 @dp.message_handler(state=LoginPassword.password)
 async def process_password(message: types.Message, state: FSMContext, set_password=True):
-    """Прием пароля и отображение state.data"""
+    """Прием пароля и отображение state.data (Введенных ранее полей)"""
     async with state.proxy() as data:
         if set_password:
             data['password'] = message.text
@@ -94,7 +93,7 @@ async def process_password(message: types.Message, state: FSMContext, set_passwo
         await bot.delete_message(message.chat.id, message.message_id - 1)
         reply = f'Наименование: {data["title"]}\nЛогин: {data["login"]}\nПароль: {data["password"]}'
         await bot.send_message(message.from_user.id, reply, reply_markup=kb.pre_save_kb)
-    await LoginPassword.next()
+    await LoginPassword.next() # Перевод на заключительную стадию (подтверждение/сохранение/отмена)
 
 
 @dp.callback_query_handler(state=LoginPassword.end)
