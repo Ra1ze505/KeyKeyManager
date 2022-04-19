@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String, create_engine, ForeignKey
 from sqlalchemy.orm import relationship, scoped_session
-from sqlalchemy.orm import sessionmaker
 
 
 from sqlalchemy.ext.declarative import declarative_base
