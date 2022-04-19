@@ -9,8 +9,6 @@ certifi==2021.5.30
 chardet==4.0.0
 charset-normalizer==2.0.6
 greenlet==1.1.1
-ibm-db
-ibm-db-sa==0.3.7
 idna==3.2
 Mako==1.1.5
 MarkupSafe==2.0.1

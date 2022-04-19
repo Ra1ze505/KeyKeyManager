@@ -1,12 +1,16 @@
 from sqlalchemy import Column, Integer, String, create_engine, ForeignKey
 from sqlalchemy.orm import relationship, scoped_session
-
-
 from sqlalchemy.ext.declarative import declarative_base
+
+try:
+    from settings import DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
+except ImportError:
+    from main.settings import DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
+
 
 
 Base = declarative_base()
-engine = create_engine('postgresql://postgres:postgres@db:5432/postgres', echo=True)
+engine = create_engine(f'postgresql://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}', echo=True)
 
 
 class User(Base):

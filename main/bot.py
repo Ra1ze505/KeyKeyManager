@@ -8,8 +8,9 @@ from aiogram.utils import executor
 from sqlalchemy.exc import IntegrityError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy.sql.elements import and_
+from sqlalchemy.orm import sessionmaker, scoped_session
 
-from models import User, UserKey
+from models import User, UserKey, engine
 
 import keyboard as kb
 from settings import TOKEN
